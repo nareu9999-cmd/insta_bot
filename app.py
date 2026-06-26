@@ -14,7 +14,7 @@ APIFY_TOKEN = "apify_api_bjEdwAY1D8iyURBVYsSxAqaCBBxfsL0X9CQ4"
 tab1, tab2 = st.tabs(["🚀 1단계: 조건별 인플루언서 발굴", "✉️ 2단계: 듀얼 섭외 메시지 생성"])
 
 # ==========================================
-# [탭 1] 확장형 인플루언서 자동 추출기 (방어력 MAX)
+# [탭 1] 확장형 인플루언서 추출 (함정 완벽 해결)
 # ==========================================
 with tab1:
     with st.sidebar:
@@ -22,29 +22,33 @@ with tab1:
         search_hashtag = st.text_input("메인 해시태그 (# 제외)", value="야구직관")
         
         st.subheader("🎯 인플루언서 규모 필터링")
-        follower_range = st.slider("팔로워 수 범위 (명)", min_value=100, max_value=500000, value=(500, 50000), step=100)
-        following_range = st.slider("팔로잉 수 범위 (명)", min_value=10, max_value=10000, value=(50, 3000), step=50)
-        max_posts = st.slider("스캔할 게시글 수 (모수 확장용)", min_value=20, max_value=300, value=60, step=20)
+        # 💡 수정 1: 최소값을 0으로 내리고 기본값을 넓힘
+        follower_range = st.slider("팔로워 수 범위 (명)", min_value=0, max_value=500000, value=(500, 100000), step=500)
+        following_range = st.slider("팔로잉 수 범위 (명)", min_value=0, max_value=10000, value=(0, 5000), step=50)
         
+        # 💡 수정 2: 데이터가 가려진 유저를 살릴지 결정하는 안전망 체크박스 추가
+        include_missing = st.checkbox("데이터 비공개(수집 불가) 계정 포함하기", value=True, 
+                                      help="수집기가 팔로워 수를 읽지 못해 0명으로 잡힌 알짜 계정을 버리지 않고 포함합니다.")
+        
+        max_posts = st.slider("스캔할 게시글 수 (모수 확장용)", min_value=20, max_value=300, value=60, step=20)
         brand_target = st.text_area("AI 판별 기준", value="야구(KBO)를 진심으로 좋아하고, 경기장 직관 콘텐츠를 올리며 팬들과 소통하는 인플루언서")
+        
         run_btn = st.button("🚀 조건에 맞는 인플루언서 추출", use_container_width=True, type="primary")
 
     if run_btn:
         if not search_hashtag:
             st.error("해시태그를 입력해 주세요.")
         else:
-            with st.spinner(f"#{search_hashtag} 및 파생 해시태그를 총동원하여 데이터를 긁어모으는 중입니다..."):
+            with st.spinner(f"#{search_hashtag} 및 파생 해시태그 스캔 중... (시간이 조금 걸릴 수 있습니다)"):
                 try:
                     client = genai.Client(api_key=GEMINI_KEY)
                     apify_client = ApifyClient(APIFY_TOKEN)
 
-                    # 💡 강제 모수 확장: 인스타 알고리즘을 뚫기 위해 검색어를 5개로 강제 복제
                     target_hashtags = [
                         search_hashtag, 
                         f"{search_hashtag}추천", 
                         f"{search_hashtag}그램", 
-                        f"{search_hashtag}일상",
-                        f"{search_hashtag}투어"
+                        f"{search_hashtag}일상"
                     ]
                     
                     run = apify_client.actor("apify/instagram-hashtag-scraper").call(
@@ -60,12 +64,19 @@ with tab1:
                         username = item.get("ownerUsername", "unknown")
                         if username == "unknown": continue
                             
-                        followers = item.get("ownerFollowersCount", 0)
-                        following = item.get("ownerFollowingCount", 500) # 기본값 세팅
+                        # 안전한 데이터 추출 (None 값이면 0으로 변환)
+                        followers = item.get("ownerFollowersCount") or 0
+                        following = item.get("ownerFollowingCount") or 0
                         
-                        # 💡 팔로워/팔로잉 범위 1차 필터링
-                        if not (follower_range[0] <= followers <= follower_range[1]): continue
-                        if not (following_range[0] <= following <= following_range[1]): continue
+                        # 💡 핵심 로직: 필터링 함정 해결
+                        # 팔로워 데이터가 0보다 클 때만 필터 검사를 하고, 0이면 체크박스 허용 여부에 따라 통과시킴
+                        if followers > 0:
+                            if not (follower_range[0] <= followers <= follower_range[1]): continue
+                        else:
+                            if not include_missing: continue # 체크 해제 시 버림
+                                
+                        if following > 0:
+                            if not (following_range[0] <= following <= following_range[1]): continue
 
                         if username not in user_data_map:
                             user_data_map[username] = {
@@ -81,16 +92,20 @@ with tab1:
                     final_list = []
                     
                     if not user_data_map:
-                        st.warning("⚠️ 지정하신 팔로워 범위에 맞는 유저가 없습니다. 왼쪽 슬라이더 범위를 넓히고 다시 시도해 보세요!")
+                        st.warning("⚠️ 지정하신 범위에 맞는 유저가 없습니다. 왼쪽 슬라이더 범위를 더 넓히거나 모수 스캔 수를 늘려보세요!")
                     else:
                         progress_bar = st.progress(0)
                         total_users = len(user_data_map)
                         
                         for idx, (username, info) in enumerate(user_data_map.items()):
-                            time.sleep(1.5) # 안전 딜레이
+                            time.sleep(1.5) # AI 한도 초과 방지 딜레이
                             
                             valid_likes = [l for l in info["likes"] if l != -1 and l is not None]
-                            avg_likes_str = f"{round(sum(valid_likes[:9]) / len(valid_likes[:9]), 1):,}개" if valid_likes else "비공개"
+                            avg_likes_str = f"{round(sum(valid_likes[:9]) / len(valid_likes[:9]), 1):,}개" if valid_likes else "숨김"
+                            
+                            # 화면 표기용 (0명이면 '비공개'로 텍스트 출력)
+                            follower_display = f"{info['followers']:,}명" if info['followers'] > 0 else "수집 불가(비공개)"
+                            following_display = f"{info['following']:,}명" if info['following'] > 0 else "수집 불가(비공개)"
                             
                             combined_caption = " / ".join(info["captions"])[:800] 
                             profile_link = f"https://instagram.com/{username}"
@@ -109,7 +124,6 @@ with tab1:
                             score, recommend, bio_summary = "확인불가", "NO", "내용 부족"
                             try:
                                 response = client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-                                # 💡 가장 원초적이고 안전한 텍스트 파싱 방식으로 복구
                                 for line in response.text.strip().split('\n'):
                                     if '점수:' in line: score = line.split(':', 1)[1].strip()
                                     if '추천:' in line: recommend = line.split(':', 1)[1].strip()
@@ -120,18 +134,18 @@ with tab1:
                             
                             final_list.append({
                                 "인스타그램 아이디": username, "이름": info["fullName"],
-                                "팔로워 수": f"{info['followers']:,}명", "팔로잉 수": f"{info['following']:,}명",
+                                "팔로워 수": follower_display, "팔로잉 수": following_display,
                                 "계정 설명 (AI 요약)": bio_summary, "최근 9개 평균 좋아요": avg_likes_str,
                                 "AI 점수": score, "링크": profile_link
                             })
                             progress_bar.progress((idx + 1) / total_users)
 
                         df = pd.DataFrame(final_list)
-                        st.success(f"🎉 필터링 통과 유저 {len(df)}명 분석 완료!")
+                        st.success(f"🎉 최종 {len(df)}명 분석 완료!")
                         st.dataframe(df, column_config={"링크": st.column_config.LinkColumn("인스타그램 링크")}, hide_index=True, use_container_width=True)
                         
                         csv = df.to_csv(index=False, encoding="utf-8-sig").encode('utf-8-sig')
-                        st.download_button("📥 필터링 완료 명단 다운로드(CSV)", data=csv, file_name=f"추출결과_{search_hashtag}.csv", mime="text/csv")
+                        st.download_button("📥 필터링 완료 명단 다운로드", data=csv, file_name=f"추출결과_{search_hashtag}.csv", mime="text/csv")
                         
                 except Exception as e:
                     st.error(f"오류 발생: {e}")
@@ -182,5 +196,5 @@ with tab2:
                         st.markdown(response.text)
                         st.success("✅ 생성 완료! 상황에 맞게 복사해서 사용하세요.")
                     except Exception as e:
-                        if "429" in str(e): st.error("🚨 구글 AI 서버 무료 한도 대기 중입니다. 30초 뒤 다시 눌러주세요.")
+                        if "429" in str(e): st.error("🚨 구글 AI 서버 한도 초과입니다. 30초 뒤 다시 눌러주세요.")
                         else: st.error(f"오류 발생: {e}")
