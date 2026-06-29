@@ -8,33 +8,16 @@ st.set_page_config(page_title="AI 인플루언서 추출기 프로", layout="wid
 st.title("✨ AI 인플루언서 추출기 (SaaS 플랫폼 버전)")
 st.markdown("각 업체의 API 연동 키를 입력하여 비용 부담 없이 무제한으로 인플루언서를 발굴하고 검증하세요.")
 
-tab1, tab2 = st.tabs(["🚀 1단계: 조건별 인플루언서 발굴", "✉️ 2단계: 듀얼 섭외 메시지 생성"])
+# 💡 업그레이드: 발급 가이드 안내를 위한 3번째 탭(📖) 추가
+tab1, tab2, tab3 = st.tabs(["🚀 1단계: 조건별 인플루언서 발굴", "✉️ 2단계: 듀얼 섭외 메시지 생성", "📖 API 키 발급 가이드"])
 
 # ==========================================
-# [사이드바] 인증 정보 입력 및 친절한 가이드 추가
+# [사이드바] 인증 정보 입력 및 가이딩 링크
 # ==========================================
 with st.sidebar:
     st.header("🔑 API 인증 세팅")
-    st.caption("이 서비스는 개별 API 키를 사용하므로 플랫폼 이용료가 발생하지 않습니다.")
+    st.caption("오른쪽 세 번째 탭 [📖 API 키 발급 가이드]를 참고하여 키를 입력해 주세요.")
     
-    # 💡 업그레이드: 초보자도 쉽게 따라 할 수 있는 1분 발급 가이드 (접이식 메뉴)
-    with st.expander("💡 1분만에 API 키 발급받는 방법 (클릭)", expanded=False):
-        st.markdown("""
-        **1. Google Gemini API 키 발급**
-        * [Google AI Studio 접속](https://aistudio.google.com/) 후 로그인
-        * 좌측 상단 **[Get API key]** 파란색 버튼 클릭
-        * **[Create API key]** 누른 뒤 발급된 키(`AIzaSy...`) 복사!
-        
-        **2. Apify API 토큰 발급**
-        * [Apify 가입 및 로그인](https://apify.com/)
-        * 우측 상단 프로필 클릭 -> **[Settings]** 이동
-        * 상단 메뉴 중 **[Integrations]** 탭 클릭
-        * **API token** 항목 오른쪽에 있는 토큰 복사!
-        
-        ⚠️ *주의: 무료 크레딧 소진 시 결제 카드를 등록하셔야 대량 추출이 지속됩니다.*
-        """)
-        
-    # 사용자 개인 키 입력창
     user_gemini_key = st.text_input("1. Google Gemini API Key 입력", type="password", help="구글 AI 스튜디오에서 발급받은 키를 입력하세요.")
     user_apify_token = st.text_input("2. Apify API Token 입력", type="password", help="Apify 계정 설정에서 발급받은 토큰을 입력하세요.")
     
@@ -62,7 +45,7 @@ with st.sidebar:
 with tab1:
     if run_btn:
         if not user_gemini_key or not user_apify_token:
-            st.error("🔒 사이드바 맨 위에 있는 'Gemini API Key'와 'Apify API Token'을 모두 입력하셔야 가동됩니다. 발급 방법을 참고해 주세요!")
+            st.error("🔒 API 키가 누락되었습니다. 상단 탭 중 [📖 API 키 발급 가이드]를 참고하여 발급 후 입력해 주세요!")
         elif not search_input:
             st.error("검색어(태그/키워드)를 입력해 주세요.")
         else:
@@ -77,7 +60,6 @@ with tab1:
             user_captions = {}
             user_likes = {}
             
-            # --- 1단계: 후보군 수집 ---
             if search_mode == "해시태그 검색 (# 기반)":
                 with st.spinner("🧠 해시태그 피드에서 후보군을 수집 중입니다..."):
                     try:
@@ -103,9 +85,8 @@ with tab1:
                                 if item.get("likesCount") is not None:
                                     user_likes[username].append(item.get("likesCount", 0))
                     except Exception as e:
-                        st.error(f"❌ 수집 중 계정 한도 오류 발생: {e}\n입력하신 Apify 토큰 요금제의 제한을 확인해 주세요.")
+                        st.error(f"❌ 수집 중 요금제 한도 에러 발생: {e}\n[📖 API 키 발급 가이드] 탭의 크레딧 충전 안내를 확인해 주세요.")
                         st.stop()
-            
             else:
                 with st.spinner(f"🧠 통합 검색창에서 '{search_input}' 관련 유저 계정들을 수집 중입니다..."):
                     try:
@@ -117,17 +98,15 @@ with tab1:
                             }
                         )
                         dataset_id = run.get("defaultDatasetId") or run.get("default_dataset_id")
-                        
                         for item in apify_client.dataset(dataset_id).iterate_items():
                             user_info = item.get("user")
                             username = user_info.get("username") if isinstance(user_info, dict) else item.get("username")
                             if username and username != "unknown":
                                 raw_usernames.add(username)
                     except Exception as e:
-                        st.error(f"❌ 수집 중 계정 한도 오류 발생: {e}\n입력하신 Apify 토큰 요금제의 제한을 확인해 주세요.")
+                        st.error(f"❌ 수집 중 요금제 한도 에러 발생: {e}\n[📖 API 키 발급 가이드] 탭의 크레딧 충전 안내를 확인해 주세요.")
                         st.stop()
 
-            # --- 2단계: 프로필 정밀 검증 ---
             with st.spinner(f"🕵️ 일반인 계정 차단 중... {len(raw_usernames)}명의 프로필 유효성 검증 중..."):
                 verified_user_map = {}
                 try:
@@ -174,7 +153,6 @@ with tab1:
                     st.error(f"2차 프로필 검증 오류: {e}")
                     st.stop()
 
-            # --- 3단계: AI 매칭도 검증 및 바인딩 ---
             with st.spinner("🤖 캠페인 적합도 최종 분석 중..."):
                 final_list = []
                 if not verified_user_map:
@@ -253,7 +231,7 @@ with tab2:
         st.markdown("### 💌 AI 맞춤형 제안서 결과")
         if generate_btn:
             if not user_gemini_key:
-                st.error("🔒 사이드바 맨 위에 있는 'Google Gemini API Key'를 먼저 입력하셔야 메시지가 생성됩니다.")
+                st.error("🔒 Google Gemini API Key를 입력하셔야 제안서가 문맥에 맞게 커스텀 빌드됩니다.")
             elif not company_name or not influencer_name or not collab_details:
                 st.warning("업체명, 협업 내용, 인플루언서 이름은 필수 항목입니다.")
             else:
@@ -278,3 +256,46 @@ with tab2:
                         st.success("✅ 생성 완료!")
                     except Exception as e:
                         st.error(f"오류 발생: {e}")
+
+# ==========================================
+# [탭 3] 📖 연동 API 키/토큰 발급 상세 안내 사이트 (SaaS 스펙)
+# ==========================================
+with tab3:
+    st.header("📖 연동 키(Token) 발급 가이드")
+    st.markdown("이 시스템은 각 업체의 자원(API)을 활용하여 구동되므로, 안전하고 독립적인 대량 조회가 가능합니다. 아래 가이드를 따라 1분 만에 키를 발급받으세요.")
+    
+    st.markdown("---")
+    
+    # 두 개의 영역으로 구성
+    gui_col1, gui_col2 = st.columns(2)
+    
+    with gui_col1:
+        st.subheader("🕸️ 1. Apify API Token 발급 방법")
+        st.markdown("""
+        인스타그램 실시간 트래픽 데이터를 안전하게 추출하기 위해 필요한 수집용 토큰입니다.
+        
+        * **1단계:** [Apify 공식 홈페이지(apify.com)](https://apify.com/)에 접속하여 가입 및 로그인을 진행합니다. (구글 연동 가입 시 5초 소요)
+        * **2단계:** 대시보드 우측 상단의 **[내 프로필 아이콘]**을 클릭한 뒤, **[Settings] (설정)** 메뉴로 진입합니다.
+        * **3단계:** 상단 가로 메뉴 중에서 **[Integrations] (연동)** 탭을 선택합니다.
+        * **4단계:** 화면 중앙에 있는 **API token** 항목 우측의 눈동자 아이콘을 눌러 문자열을 확인한 후, **[Copy]** 버튼을 눌러 왼쪽 사이드바에 붙여넣습니다.
+        
+        > 💡 **중요 안내 (SaaS 한도 해제)**
+        > Apify 무료 계정은 가입 시 $5(약 100~200명 수집 한도)를 제공합니다. 대량의 데이터 마이닝을 정기적으로 집행하는 업체는 [Apify Billing 메뉴]에서 해외 결제 카드를 등록하여 **'Pay-as-you-go(종량제)' 요금제로 전환**하시면 한도 초과(Hard Limit) 없이 무제한으로 조회가 가동됩니다.
+        """)
+        # 사용자가 바로 넘어갈 수 있는 아웃링크 버튼 배치
+        st.link_button("🔗 Apify 토큰 발급 페이지 바로가기", "https://console.apify.com/account#/integrations", use_container_width=True)
+        
+    with gui_col2:
+        st.subheader("🧠 2. Google Gemini API Key 발급 방법")
+        st.markdown("""
+        수집된 대량의 피드 문맥을 마케팅 관점에서 평가하고 맞춤형 섭외 원고를 생성하는 브레인 역할을 합니다.
+        
+        * **1단계:** [Google AI Studio 공식 사이트](https://aistudio.google.com/)에 평소 사용하시는 구글 비즈니스 계정으로 로그인합니다.
+        * **2단계:** 화면 좌측 상단에 위치한 파란색 **[Get API key]** 버튼을 클릭합니다.
+        * **3단계:** 중앙의 **[Create API key]** 버튼을 누른 뒤, 약관에 동의하면 나만의 영구적인 API 키가 즉시 발행됩니다.
+        * **4단계:** 발행된 대문자 키(`AIzaSy...`)를 전체 복사하여 왼쪽 사이드바에 안전하게 붙여넣어 줍니다.
+        
+        > 💡 **비용 및 한도 안내**
+        > 무료 버전은 분당 호출 제한이 있어 대량 분석 시 `⏳ 대기 중` 오류가 뜰 수 있습니다. 실무 대행팀 단위로 여러 명이 쾌적하게 사용하려면 동일 페이지의 [Plan & Billing] 탭에서 결제 카드를 등록해 유료 종량제로 변경해 주세요. (100명 검증 시 약 20원 미만 청구)
+        """)
+        st.link_button("🔗 구글 Gemini 키 발급 페이지 바로가기", "https://aistudio.google.com/", use_container_width=True)
